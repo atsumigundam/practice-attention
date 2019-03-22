@@ -132,7 +132,7 @@ class EncoderRNN(nn.Module):
         self.dropout = dropout
         self.vocab_size = vocab_size
         self.lstm_layers = lstm_layers
-        self.embedding = nn.Embedding(vocab_size, embed_size,padding_idx=PAD_TAG[0])
+        self.embedding = nn.Embedding(vocab_size, embed_size,padding_idx=PAD_TAG[1])
         self.lstm = nn.LSTM(self.embed_size, self.hidden_size, batch_first=True,bidirectional=True)
     def init_hidden(self,size):
         return (torch.randn(self.lstm_layers*2,size,self.hidden_size,device=device),torch.randn(self.lstm_layers*2,size,self.hidden_size,device=device))
@@ -140,10 +140,9 @@ class EncoderRNN(nn.Module):
         self.hidden = self.init_hidden(sentence.size(0))
         embedded = self.embedding(sentence)
         packed = torch.nn.utils.rnn.pack_padded_sequence(embedded,input_lengths,batch_first = True)
-        out, hidden = self.lstm(packed_emb, self.hidden)
-        if lengths is not None:
-            out = nn.utils.rnn.pad_packed_sequence(output)[0]
-        out = out[:, :, :self.h_dim] + out[:, :, self.h_dim:]
+        out, self.hidden = self.lstm(packed, self.hidden)
+        output, output_lengths = torch.nn.utils.rnn.pad_packed_sequence(out,batch_first =True)
+        out = output[:, :, :self.hidden_size] + output[:, :, self.hidden_size:]
         return out
 class Attn(nn.Module):
     def __init__(self, h_dim):
@@ -172,6 +171,8 @@ def train(train_data, word_to_id, id_to_word, model_path):
     logger.info("========= WORD_SIZE={} ==========".format(len(word_to_id)))
     logger.info("========= TRAIN_SIZE={} =========".format(len(train_data)))
     logger.info("========= START_TRAIN ==========")
+    Encoder = EncoderRNN(len(word_to_id),embed_size,hidden_size,batch_size,lstm_layers,dropout).to(device)
+    optimizer = optim.Adam(Encoder.parameters(), lr=0.01,weight_decay=1e-4)
     all_EPOCH_LOSS = []
     for epoch in range(epoch_num):
         total_loss = 0
@@ -186,14 +187,14 @@ def train(train_data, word_to_id, id_to_word, model_path):
             inputsentences = [sentence if len(sentence)==max(textlen_sen) else sentence+[word_to_id[PAD_TAG[0]] for i in range(max(textlen_sen) - len(sentence))] for sentence in textsentences]
             input_padding_list = [sentence.index(word_to_id[PAD_TAG[0]]) if word_to_id[PAD_TAG[0]] in sentence else len(sentence) for sentence in textsentences]
             labelslist = [int(label[0]) for label in labels]
-            logger.debug("=============== data reshape ===============")
+            logger.debug("=============== end data reshape ===============")
+            optimizer.zero_grad()
             inputsentences = torch.tensor(inputsentences,dtype=torch.long,device=device)
             value_outputsentences = torch.tensor(labelslist,dtype=torch.long,device=device)
-            print(inputsentences)
-            print(labelslist)
+            out = Encoder(inputsentences,input_padding_list)
+            #loss.backward()
             break
         break
-
 def makeminibatch(training_data):
     n = len(training_data)
     mini_batch_size = int(n/batch_size)
