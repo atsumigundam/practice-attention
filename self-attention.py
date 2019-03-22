@@ -1,3 +1,4 @@
+#dataset from http://www.ie110704.net/2017/09/23/cnn%E3%80%81rnn%E3%81%A7%E6%96%87%E7%AB%A0%E5%88%86%E9%A1%9E%E3%82%92%E5%AE%9F%E8%A3%85%E3%81%97%E3%81%A6%E3%81%BF%E3%81%9F/
 data = [
     ["Could I exchange business cards, if you don’t mind?", 1],
     ["I'm calling regarding the position advertised in the newspaper.", 0],
@@ -145,24 +146,21 @@ class EncoderRNN(nn.Module):
         out = output[:, :, :self.hidden_size] + output[:, :, self.hidden_size:]
         return out
 class Attn(nn.Module):
-    def __init__(self, h_dim):
+    def __init__(self, hidden_size,att_hidden_size):
         super(Attn, self).__init__()
-        self.h_dim = h_dim
-        self.main = nn.Sequential(
-            nn.Linear(h_dim, 24),
-            nn.ReLU(True),
-            nn.Linear(24,1)
-        )
+        self.hidden_size = hidden_size
+        self.linear1 = nn.Linear(hidden_size, att_hidden_size)
+        self.linear2 = nn.Linear(att_hidden_size, 1)
     def forward(self, encoder_outputs):
         b_size = encoder_outputs.size(0)
-        attn_ene = self.main(encoder_outputs.view(-1, self.h_dim))
-        return F.softmax(attn_ene.view(b_size, -1), dim=1).unsqueeze(2)
-
+        att_size_vector = F.relu(self.linear1(encoder_outputs.view(-1, self.hidden_size)))
+        hidden_size_vector = self.linear2(att_size_vector)
+        return F.softmax(hidden_size_vector.view(b_size, -1), dim=1).unsqueeze(2)
 class AttnClassifier(nn.Module):
-    def __init__(self, h_dim, c_num):
+    def __init__(self, hidden_size, class_num):
         super(AttnClassifier, self).__init__()
-        self.attn = Attn(h_dim)
-        self.main = nn.Linear(h_dim, c_num)
+        self.attn = Attn(hidden_size,24)
+        self.main = nn.Linear(hidden_size, class_num)
     def forward(self, encoder_outputs):
         attns = self.attn(encoder_outputs)
         feats = (encoder_outputs * attns).sum(dim=1)
@@ -172,6 +170,7 @@ def train(train_data, word_to_id, id_to_word, model_path):
     logger.info("========= TRAIN_SIZE={} =========".format(len(train_data)))
     logger.info("========= START_TRAIN ==========")
     Encoder = EncoderRNN(len(word_to_id),embed_size,hidden_size,batch_size,lstm_layers,dropout).to(device)
+    classifier = AttnClassifier(hidden_size, 2)
     optimizer = optim.Adam(Encoder.parameters(), lr=0.01,weight_decay=1e-4)
     all_EPOCH_LOSS = []
     for epoch in range(epoch_num):
@@ -187,14 +186,24 @@ def train(train_data, word_to_id, id_to_word, model_path):
             inputsentences = [sentence if len(sentence)==max(textlen_sen) else sentence+[word_to_id[PAD_TAG[0]] for i in range(max(textlen_sen) - len(sentence))] for sentence in textsentences]
             input_padding_list = [sentence.index(word_to_id[PAD_TAG[0]]) if word_to_id[PAD_TAG[0]] in sentence else len(sentence) for sentence in textsentences]
             labelslist = [int(label[0]) for label in labels]
-            logger.debug("=============== end data reshape ===============")
+            ##training
             optimizer.zero_grad()
             inputsentences = torch.tensor(inputsentences,dtype=torch.long,device=device)
-            value_outputsentences = torch.tensor(labelslist,dtype=torch.long,device=device)
-            out = Encoder(inputsentences,input_padding_list)
-            #loss.backward()
-            break
-        break
+            y = torch.tensor(labelslist,dtype=torch.long,device=device)
+            encoder_out = Encoder(inputsentences,input_padding_list)
+            output, attn= classifier(encoder_out)
+            loss = F.nll_loss(output, y)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss
+            logger.info("=============== loss: %s ===============" % loss)
+        total_loss = total_loss/len(batch_training_data)
+        logger.info("=============== total_loss: %s ===============" % total_loss)
+        all_EPOCH_LOSS.append(total_loss)
+    [logger.info("================ batchnumber: {}---loss: {}=======================".format(batchnumber,loss)) for batchnumber,loss in enumerate(all_EPOCH_LOSS)]
+    torch.save(classifier.state_dict(), model_path[0])
+    torch.save(Encoder.state_dict(), model_path[1])
+
 def makeminibatch(training_data):
     n = len(training_data)
     mini_batch_size = int(n/batch_size)
@@ -257,7 +266,7 @@ def sentence2words(sentence):
     return sentence_words
 config = yaml.load(open("config.yml", encoding="utf-8"))
 TRAIN_TOKEN_RABEL_FILE = (config["train_token_label_file"]["tokens"],config["train_token_label_file"]["labels"])
-MODEL_FILE = config["self-attention-model"]["model"]
+MODEL_FILE = (config["self-attention-model"]["attr_model"],config["self-attention-model"]["encoder_model"])
 epoch_num = int(config["self-attention-model"]["epoch"])
 batch_size = int(config["self-attention-model"]["batch"])
 embed_size = int(config["self-attention-model"]["embed"])
@@ -276,31 +285,3 @@ def main():
 if __name__ == '__main__':
     print(torch.cuda.is_available())
     main()
-    """
-    # make model
-    encoder = EncoderRNN(args.emb_dim, args.h_dim, len(TEXT.vocab), 
-                         gpu=args.cuda, v_vec = TEXT.vocab.vectors)
-    classifier = AttnClassifier(args.h_dim, 2)
-    if args.cuda:
-        encoder.cuda()
-        classifier.cuda()
-    # init model
-    def weights_init(m):
-        classname = m.__class__.__name__
-        if hasattr(m, 'weight') and (classname.find('Embedding') == -1):
-            nn.init.xavier_uniform(m.weight.data, gain=nn.init.calculate_gain('relu'))
-    for m in encoder.modules():
-        print(m.__class__.__name__)
-        weights_init(m)
-    for m in classifier.modules():
-        print(m.__class__.__name__)
-        weights_init(m)
-    # optim
-    optimizer = optim.Adam(chain(encoder.parameters(),classifier.parameters()), lr=args.lr)
-    # train model 
-    for epoch in range(args.epochs):
-        train_model(epoch + 1, train_iter, optimizer)
-        test_model(epoch + 1, test_iter)
-    # save model
-    dill.dump(encoder, open("encoder.pkl","wb"))
-    dill.dump(classifier, open("classifier.pkl","wb"))"""

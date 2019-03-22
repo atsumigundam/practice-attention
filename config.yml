@@ -1,16 +1,19 @@
 self-attention-model:
-  epoch: 5
-  batch: 3
-  embed: 256
-  hidden: 512
+  epoch: 10
+  batch: 100
+  embed: 200
+  hidden: 100
   lr: 0.01
   dropout: 0.02
   lstm_layers: 1
   max_vocab_size: 32000
-  model: ./resources/testmodel
+  attr_model: ./resources/attr_model
+  encoder_model: ./resources/encoder_model
 train_file:
   resorces: ./resources/train.txt
 train_token_label_file:
   tokens: ./resources/train_token.txt
   labels: ./resources/train_label.txt
-save_model_path:  ./resources/testmodel
+save_model_path:
+  attr_model: ./resources/attr_model
+  encoder_model: ./resources/encoder_model
