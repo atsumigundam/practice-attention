@@ -203,7 +203,6 @@ def train(train_data, word_to_id, id_to_word, model_path):
     [logger.info("================ batchnumber: {}---loss: {}=======================".format(batchnumber,loss)) for batchnumber,loss in enumerate(all_EPOCH_LOSS)]
     torch.save(classifier.state_dict(), model_path[0])
     torch.save(Encoder.state_dict(), model_path[1])
-
 def makeminibatch(training_data):
     n = len(training_data)
     mini_batch_size = int(n/batch_size)
