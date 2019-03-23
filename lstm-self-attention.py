@@ -283,7 +283,7 @@ UNKNOWN_TAG = ("<UNK>", 0)
 EOS_TAG = ("<EOS>", 1)
 PAD_TAG = ("<PAD>",2)
 def main():
-    #tokenize()
+    tokenize()
     traindata,word_to_id,id_to_word=get_train_data(TRAIN_TOKEN_RABEL_FILE,max_vocab_size)
     train(traindata,word_to_id,id_to_word,MODEL_FILE)
 if __name__ == '__main__':
