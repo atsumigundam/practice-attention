@@ -143,7 +143,9 @@ class EncoderRNN(nn.Module):
         packed = torch.nn.utils.rnn.pack_padded_sequence(embedded,input_lengths,batch_first = True)
         out, self.hidden = self.lstm(packed, self.hidden)
         output, output_lengths = torch.nn.utils.rnn.pad_packed_sequence(out,batch_first =True)
+        #print(output)
         out = output[:, :, :self.hidden_size] + output[:, :, self.hidden_size:]
+        #print(out)
         return out
 class Attn(nn.Module):
     def __init__(self, hidden_size,att_hidden_size):
@@ -171,7 +173,8 @@ def train(train_data, word_to_id, id_to_word, model_path):
     logger.info("========= START_TRAIN ==========")
     Encoder = EncoderRNN(len(word_to_id),embed_size,hidden_size,batch_size,lstm_layers,dropout).to(device)
     classifier = AttnClassifier(hidden_size, 2)
-    optimizer = optim.Adam(Encoder.parameters(), lr=0.01,weight_decay=1e-4)
+    Encoder_optimizer = optim.Adam(Encoder.parameters(), lr=0.01,weight_decay=1e-4)
+    classifier_optimizer = optim.Adam(classifier.parameters(), lr=0.01,weight_decay=1e-4)
     all_EPOCH_LOSS = []
     for epoch in range(epoch_num):
         total_loss = 0
@@ -187,14 +190,16 @@ def train(train_data, word_to_id, id_to_word, model_path):
             input_padding_list = [sentence.index(word_to_id[PAD_TAG[0]]) if word_to_id[PAD_TAG[0]] in sentence else len(sentence) for sentence in textsentences]
             labelslist = [int(label[0]) for label in labels]
             ##training
-            optimizer.zero_grad()
+            classifier_optimizer.zero_grad()
+            Encoder_optimizer.zero_grad()
             inputsentences = torch.tensor(inputsentences,dtype=torch.long,device=device)
             y = torch.tensor(labelslist,dtype=torch.long,device=device)
             encoder_out = Encoder(inputsentences,input_padding_list)
             output, attn= classifier(encoder_out)
             loss = F.nll_loss(output, y)
             loss.backward()
-            optimizer.step()
+            classifier_optimizer.step()
+            Encoder_optimizer.step()
             total_loss += loss
             logger.info("=============== loss: %s ===============" % loss)
         total_loss = total_loss/len(batch_training_data)
@@ -265,14 +270,14 @@ def sentence2words(sentence):
     return sentence_words
 config = yaml.load(open("config.yml", encoding="utf-8"))
 TRAIN_TOKEN_RABEL_FILE = (config["train_token_label_file"]["tokens"],config["train_token_label_file"]["labels"])
-MODEL_FILE = (config["self-attention-model"]["attr_model"],config["self-attention-model"]["encoder_model"])
-epoch_num = int(config["self-attention-model"]["epoch"])
-batch_size = int(config["self-attention-model"]["batch"])
-embed_size = int(config["self-attention-model"]["embed"])
-hidden_size = int(config["self-attention-model"]["hidden"])
-dropout = float(config["self-attention-model"]["dropout"])
-lstm_layers = int(config["self-attention-model"]["lstm_layers"])
-max_vocab_size = int(config["self-attention-model"]["max_vocab_size"])
+MODEL_FILE = (config["lstm-self-attention-model"]["attr_model"],config["lstm-self-attention-model"]["encoder_model"])
+epoch_num = int(config["lstm-self-attention-model"]["epoch"])
+batch_size = int(config["lstm-self-attention-model"]["batch"])
+embed_size = int(config["lstm-self-attention-model"]["embed"])
+hidden_size = int(config["lstm-self-attention-model"]["hidden"])
+dropout = float(config["lstm-self-attention-model"]["dropout"])
+lstm_layers = int(config["lstm-self-attention-model"]["lstm_layers"])
+max_vocab_size = int(config["lstm-self-attention-model"]["max_vocab_size"])
 save_model_path = config["save_model_path"]
 UNKNOWN_TAG = ("<UNK>", 0)
 EOS_TAG = ("<EOS>", 1)
